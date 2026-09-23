@@ -1,0 +1,30 @@
+# Captured personal health data — never commit
+mibro_session.log
+*.log
+captures/
+*.csv
+*.sqlite
+*.db
+
+# Vendor material — do not redistribute
+*.apk
+*.xapk
+*.dex
+*.so
+jadx-out/
+decompiled/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
