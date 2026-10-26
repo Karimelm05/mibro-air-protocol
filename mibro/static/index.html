@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mibro log</title>
+<style>
+:root {
+  --paper: #EDF0F3; --card: #F7F9FA; --ink: #1B2530; --muted: #66727F; --rule: #D5DBE1;
+  --steps: #2F6F5E; --hr: #C2445B; --deep: #2E3A8C; --light: #9AA6E6; --focus: #2E3A8C;
+  --sans: "Inter", "Noto Sans", "Segoe UI", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #131920; --card: #19212A; --ink: #E2E7EC; --muted: #8B97A3; --rule: #2A3540;
+    --steps: #5FB39A; --hr: #E8738A; --deep: #7F8CF0; --light: #3F4A86; --focus: #9FAAF5;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--paper); color: var(--ink);
+  font: 15px/1.5 var(--sans); font-variant-numeric: tabular-nums;
+}
+main { max-width: 980px; margin: 0 auto; padding: 28px 20px 64px; }
+a, button { color: inherit; font: inherit; }
+button {
+  border: 1px solid var(--rule); background: var(--card); border-radius: 6px;
+  padding: 6px 12px; cursor: pointer;
+}
+button:hover { border-color: var(--muted); }
+button:disabled { opacity: .5; cursor: default; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; }
+header h1 { font-size: 15px; font-weight: 600; margin: 0; letter-spacing: .01em; }
+header .meta { color: var(--muted); font-size: 13.5px; }
+header .spacer { flex: 1; }
+#syncmsg { color: var(--muted); font-size: 13px; width: 100%; min-height: 1.2em; margin-top: 4px; }
+
+.daynav { display: flex; align-items: center; gap: 8px; margin: 34px 0 6px; }
+.daynav h2 { font-size: 30px; font-weight: 300; margin: 0 8px 0 4px; letter-spacing: -.01em; }
+.daynav button { padding: 4px 10px; }
+
+.totals { display: flex; flex-wrap: wrap; gap: 4px 34px; margin: 6px 0 22px; color: var(--muted); }
+.totals b { color: var(--ink); font-weight: 500; font-size: 19px; margin-right: 4px; }
+
+.ribbon { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 14px 8px; }
+.ribbon svg { display: block; width: 100%; height: auto; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 13px; color: var(--muted); margin: 8px 2px 2px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+#readout { min-height: 1.4em; font-size: 13.5px; margin: 2px 2px 0; }
+
+section { margin-top: 44px; }
+section h3 { font-size: 15px; font-weight: 600; margin: 0 0 12px; }
+section p.note { color: var(--muted); font-size: 13.5px; margin: -6px 0 12px; max-width: 64ch; }
+
+.month svg { display: block; width: 100%; height: auto; }
+.month .bar { cursor: pointer; }
+
+.segs { display: grid; grid-template-columns: auto auto 1fr; gap: 3px 16px; font-size: 14px; max-width: 520px; }
+.segs .t { color: var(--muted); }
+.segs .b { align-self: center; height: 8px; border-radius: 2px; }
+
+table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+td, th { text-align: left; padding: 5px 12px 5px 0; border-bottom: 1px solid var(--rule); font-weight: 400; }
+th { color: var(--muted); }
+td.err { color: var(--hr); }
+
+.empty { background: var(--card); border: 1px dashed var(--rule); border-radius: 10px; padding: 28px; }
+.empty code { background: var(--paper); padding: 2px 6px; border-radius: 4px; }
+svg text { fill: var(--muted); font: 11px var(--sans); }
+#rib, #mon { overflow-x: auto; overscroll-behavior-x: contain; }
+td.when { white-space: nowrap; }
+@media (max-width: 600px) {
+  .daynav h2 { font-size: 24px; }
+  .totals { gap: 2px 20px; }
+  #rib svg, #mon svg { min-width: 680px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ribbon rect.s, .ribbon rect.l, .ribbon rect.d { transition: opacity .15s; }
+}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Mibro Air</h1>
+    <span class="meta" id="battery"></span>
+    <span class="meta" id="lastsync"></span>
+    <span class="spacer"></span>
+    <button id="syncbtn" type="button">Sync now</button>
+    <div id="syncmsg" role="status" aria-live="polite"></div>
+  </header>
+
+  <div id="app"></div>
+</main>
+
+<script>
+"use strict";
+const $ = (s, r = document) => r.querySelector(s);
+const NS = "http://www.w3.org/2000/svg";
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmtMin = m => m ? `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}` : "—";
+const fmtN = n => n == null ? "—" : n.toLocaleString("en").replace(/,/g, " ");
+const dayName = iso => new Date(iso + "T12:00").toLocaleDateString("en-GB", {weekday: "long", day: "numeric", month: "long"});
+const addDays = (iso, k) => { const d = new Date(iso + "T12:00"); d.setDate(d.getDate() + k); return d.toISOString().slice(0, 10); };
+const toMs = s => new Date(s.replace(" ", "T")).getTime();
+
+function svg(tag, attrs = {}, parent) {
+  const el = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  if (parent) parent.appendChild(el);
+  return el;
+}
+
+let state = { status: null, day: null };
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+/* ---------------------------------------------------------------- header */
+function renderHeader(st) {
+  const bat = st.battery.at(-1);
+  $("#battery").textContent = bat ? `Battery ${bat.percent}%` : "";
+  const last = st.syncs.find(s => s.source === "ble");
+  $("#lastsync").textContent = last
+    ? `Last sync ${last.started.slice(5, 16).replace(" ", " at ")}${last.status === "error" ? " (failed)" : ""}`
+    : "Never synced";
+  const btn = $("#syncbtn");
+  btn.disabled = st.sync.running || !st.address;
+  btn.textContent = st.sync.running ? "Syncing…" : "Sync now";
+  btn.title = st.address ? "" : "Set the watch address first: mibro setup ADDR";
+  const msg = st.sync.running ? st.sync.log.at(-1) || "Connecting to the watch"
+    : st.sync.last ? (st.sync.last.ok
+        ? `Synced: ${st.sync.last.activity} hourly records, ${st.sync.last.sleep} sleep segments`
+        : `Sync failed: ${st.sync.last.error}`) : "";
+  $("#syncmsg").textContent = msg || "";
+}
+
+$("#syncbtn").addEventListener("click", async () => {
+  try {
+    await api("/api/sync", {method: "POST", headers: {"X-Mibro": "1"}});
+    poll();
+  } catch (e) { $("#syncmsg").textContent = e.message; }
+});
+
+async function poll() {
+  const st = await api("/api/status");
+  state.status = st;
+  renderHeader(st);
+  if (st.sync.running) setTimeout(poll, 1500);
+  else if (state.wasRunning) { state.wasRunning = false; load(state.day); return; }
+  state.wasRunning = st.sync.running || state.wasRunning;
+}
+
+/* ---------------------------------------------------------------- ribbon */
+// 30 hours: 18:00 the evening before -> midnight at the end of the day.
+function ribbon(data) {
+  const W = 1000, H = 250, L = 34, R = 34, top = 14, axis = 150, sleepH = 54;
+  const t0 = toMs(addDays(data.day, -1) + " 18:00:00"), t1 = t0 + 30 * 3600e3;
+  const x = t => L + (t - t0) / (t1 - t0) * (W - L - R);
+  const root = svg("svg", {viewBox: `0 0 ${W} ${H}`, role: "img",
+    "aria-label": `Activity and sleep for ${dayName(data.day)}`});
+
+  // night shading 18:00-06:00 behind everything
+  const hours = data.hours;
+  const smax = Math.max(500, ...hours.map(h => h.steps));
+  const hrs = hours.filter(h => h.hr).map(h => h.hr);
+  const hmin = Math.min(45, ...hrs), hmax = Math.max(110, ...hrs);
+  const yS = v => axis - v / smax * (axis - top - 6);
+  const yH = v => axis - (v - hmin) / (hmax - hmin) * (axis - top - 6);
+
+  // hour grid + labels
+  for (let k = 0; k <= 30; k += 3) {
+    const t = t0 + k * 3600e3, hh = (18 + k) % 24;
+    svg("line", {x1: x(t), x2: x(t), y1: top, y2: axis + sleepH + 6,
+      stroke: "var(--rule)", "stroke-width": hh === 0 ? 1.2 : .6}, root);
+    const lab = svg("text", {x: x(t), y: H - 8, "text-anchor": "middle"}, root);
+    lab.textContent = hh === 0 ? (k === 6 ? dayName(data.day).split(" ")[0].slice(0, 3) : "24") : String(hh).padStart(2, "0");
+  }
+  svg("line", {x1: L, x2: W - R, y1: axis, y2: axis, stroke: "var(--muted)", "stroke-width": .8}, root);
+
+  // sleep below the axis: light first, deep laid over it
+  const night = data.night.items || [];
+  for (const stage of ["light", "deep"]) {
+    for (const s of night.filter(s => s.stage === stage)) {
+      const a = Math.max(x(toMs(s.start)), L), b = Math.min(x(toMs(s.end)), W - R);
+      if (b <= a) continue;
+      const deep = stage === "deep";
+      const r = svg("rect", {class: deep ? "d" : "l", x: a, width: Math.max(1.5, b - a),
+        y: axis + (deep ? 10 : 6), height: deep ? sleepH - 22 : sleepH - 14, rx: 2,
+        fill: deep ? "var(--deep)" : "var(--light)"}, root);
+      r.dataset.read = `${s.start.slice(11, 16)}–${s.end.slice(11, 16)}  ${stage} sleep, ${s.minutes} min`;
+    }
+  }
+
+  // steps bars above the axis, one per hour of the day
+  const dayStart = toMs(data.day + " 00:00:00");
+  const bw = (x(dayStart + 3600e3) - x(dayStart)) * .72;
+  for (const h of hours) {
+    const t = dayStart + parseInt(h.hour) * 3600e3;
+    const cx = x(t + 1800e3);
+    const r = svg("rect", {class: "s", x: cx - bw / 2, width: bw, y: yS(h.steps),
+      height: Math.max(h.steps ? 1.5 : 0, axis - yS(h.steps)), rx: 1.5, fill: "var(--steps)"}, root);
+    r.dataset.read = `${h.hour}–${String(parseInt(h.hour) + 1).padStart(2, "0")}:00  ${fmtN(h.steps)} steps, ${h.calories} kcal`
+      + (h.hr ? `, heart rate ${h.hr} bpm` : ", no heart-rate reading");
+  }
+
+  // heart rate: line through hourly readings, gaps where none
+  let path = "", pen = false;
+  for (const h of hours) {
+    const t = dayStart + parseInt(h.hour) * 3600e3 + 1800e3;
+    if (h.hr) { path += `${pen ? "L" : "M"}${x(t).toFixed(1)},${yH(h.hr).toFixed(1)}`; pen = true; }
+    else pen = false;
+  }
+  svg("path", {d: path, fill: "none", stroke: "var(--hr)", "stroke-width": 1.8,
+    "stroke-linejoin": "round"}, root);
+  for (const h of hours.filter(h => h.hr)) {
+    const t = dayStart + parseInt(h.hour) * 3600e3 + 1800e3;
+    svg("circle", {cx: x(t), cy: yH(h.hr), r: 2.6, fill: "var(--hr)"}, root);
+  }
+
+  // scales
+  const sLab = svg("text", {x: L - 6, y: yS(smax) + 4, "text-anchor": "end"}, root);
+  sLab.textContent = smax >= 1000 ? `${(smax / 1000).toFixed(1)}k` : smax;
+  for (const v of [hmin, hmax]) {
+    const t = svg("text", {x: W - R + 6, y: yH(v) + 4, style: "fill: var(--hr)"}, root);
+    t.textContent = v;
+  }
+
+  root.addEventListener("pointermove", e => {
+    const t = e.target.dataset && e.target.dataset.read;
+    $("#readout").textContent = t || "";
+  });
+  root.addEventListener("pointerleave", () => $("#readout").textContent = "");
+  return root;
+}
+
+/* ------------------------------------------------------------ 30 days ---- */
+function month(rows, selected) {
+  const W = 1000, H = 150, L = 34, R = 34, gap = 3, n = rows.length;
+  const bw = (W - L - R) / n - gap, mid = 78;
+  const smax = Math.max(1000, ...rows.map(r => r.steps));
+  const zmax = Math.max(480, ...rows.map(r => r.sleep_min));
+  const root = svg("svg", {viewBox: `0 0 ${W} ${H}`, role: "img",
+    "aria-label": "Steps and sleep for the last 30 days"});
+  rows.forEach((r, i) => {
+    const x0 = L + i * (bw + gap);
+    const g = svg("g", {class: "bar", tabindex: 0, role: "button",
+      "aria-label": `${dayName(r.day)}: ${r.steps} steps, slept ${fmtMin(r.sleep_min)}`}, root);
+    svg("rect", {x: x0, y: 0, width: bw + gap, height: H, fill: "transparent"}, g);
+    if (r.day === selected) svg("rect", {x: x0 - 1, y: 2, width: bw + 2, height: H - 22, rx: 3,
+      fill: "none", stroke: "var(--ink)", "stroke-width": 1}, g);
+    const sh = r.steps / smax * (mid - 12);
+    svg("rect", {x: x0, y: mid - 4 - sh, width: bw, height: sh, rx: 1.5, fill: "var(--steps)"}, g);
+    const zh = r.sleep_min / zmax * (H - mid - 30);
+    const dh = r.deep_min / zmax * (H - mid - 30);
+    svg("rect", {x: x0, y: mid + 2, width: bw, height: zh, rx: 1.5, fill: "var(--light)"}, g);
+    svg("rect", {x: x0, y: mid + 2, width: bw, height: dh, rx: 1.5, fill: "var(--deep)"}, g);
+    const go = () => load(r.day);
+    g.addEventListener("click", go);
+    g.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+    const d = new Date(r.day + "T12:00");
+    const firstMonday = rows.findIndex(q => new Date(q.day + "T12:00").getDay() === 1);
+    if (d.getDay() === 1 || (i === 0 && firstMonday > 3)) {
+      const t = svg("text", {x: x0, y: H - 4}, root);
+      t.textContent = d.toLocaleDateString("en-GB", {day: "numeric", month: "short"});
+    }
+  });
+  const a = svg("text", {x: L - 6, y: 14, "text-anchor": "end"}, root); a.textContent = "steps";
+  const b = svg("text", {x: L - 6, y: mid + 14, "text-anchor": "end"}, root); b.textContent = "sleep";
+  return root;
+}
+
+/* ---------------------------------------------------------------- page */
+async function load(day) {
+  const st = state.status || await api("/api/status");
+  state.status = st;
+  renderHeader(st);
+  day = day || st.today;
+  state.day = day;
+  const app = $("#app");
+
+  if (!st.days.length) {
+    app.innerHTML = `<div class="empty" style="margin-top:34px">
+      <p><b>Nothing logged yet.</b></p>
+      <p>${st.address
+        ? "Press <b>Sync now</b>, or run <code>mibro sync</code> in a terminal."
+        : "Save your watch's address first: <code>mibro setup AA:BB:CC:DD:EE:FF</code> (find it with <code>bluetoothctl devices</code>), then sync."}</p>
+      <p>To keep the log filling on its own, run <code>mibro install-timer</code>.</p></div>`;
+    return;
+  }
+
+  const [d, ov] = await Promise.all([api(`/api/day?date=${day}`), api("/api/overview?days=30")]);
+  const t = d.totals, n = d.night;
+  const isToday = day === st.today;
+
+  app.innerHTML = `
+    <div class="daynav">
+      <button type="button" id="prev" aria-label="Previous day">‹</button>
+      <h2>${esc(isToday ? "Today" : dayName(day))}</h2>
+      <button type="button" id="next" aria-label="Next day" ${isToday ? "disabled" : ""}>›</button>
+      ${isToday ? "" : `<button type="button" id="tod">Today</button>`}
+    </div>
+    <div class="totals">
+      <span><b>${fmtN(t.steps)}</b>steps</span>
+      <span><b>${fmtN(t.calories)}</b>kcal</span>
+      <span>${t.hr_avg ? `<b>${t.hr_min}–${t.hr_max}</b>bpm, average ${t.hr_avg}` : "<b>—</b>heart rate"}</span>
+      <span><b>${fmtMin(n.asleep_min)}</b>asleep${n.asleep_min ? `, ${fmtMin(n.deep_min)} deep` : ""}</span>
+    </div>
+    <div class="ribbon">
+      <div id="rib"></div>
+      <div id="readout" aria-live="polite"></div>
+      <div class="legend">
+        <span><i style="background:var(--steps)"></i>Steps per hour</span>
+        <span><i style="background:var(--hr)"></i>Heart rate</span>
+        <span><i style="background:var(--light)"></i>Light sleep</span>
+        <span><i style="background:var(--deep)"></i>Deep sleep</span>
+      </div>
+    </div>
+    ${!d.hours.length && !n.segments ? `<p class="note" style="color:var(--muted)">No records for this day.</p>` : ""}
+
+    <section class="month">
+      <h3>Last 30 days</h3>
+      <div id="mon"></div>
+    </section>
+
+    <section>
+      <h3>Night of ${esc(dayName(addDays(day, -1)))}</h3>
+      ${n.segments ? `<p class="note">${fmtMin(n.asleep_min)} asleep, ${n.start.slice(11, 16)} to ${n.end.slice(11, 16)}.
+        Deep sleep overlaps light, so the total is the time covered, not the sum of the segments.</p>
+      <div class="segs">${n.items.map(s => `
+        <span class="t">${s.start.slice(11, 16)}–${s.end.slice(11, 16)}</span>
+        <span>${s.stage} · ${s.minutes} min</span>
+        <span class="b" style="width:${Math.max(2, s.minutes / 90 * 100)}%;background:var(--${s.stage === "deep" ? "deep" : "light"})"></span>`).join("")}
+      </div>` : `<p class="note">No sleep logged for this night.</p>`}
+    </section>
+
+    <section>
+      <h3>Sync history</h3>
+      <table><thead><tr><th>Started</th><th>Source</th><th>Result</th><th>Packets</th></tr></thead>
+      <tbody>${st.syncs.slice(0, 8).map(s => `<tr><td class="when">${esc(new Date(s.started.replace(" ", "T")).toLocaleString("en-GB", {day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"}))}</td><td>${esc(s.source === "ble" ? "watch" : "imported log")}</td>
+        <td class="${s.status === "error" ? "err" : ""}">${esc(s.status === "ok" ? "ok" : s.status === "error" ? (s.error || "failed") : s.status)}</td>
+        <td>${s.rx_count ?? ""}</td></tr>`).join("")}</tbody></table>
+      ${st.device.ota_version ? `<p class="note" style="margin-top:12px">Firmware ${esc(st.device.ota_version)}, band ${esc(st.device.band_version)}.</p>` : ""}
+    </section>`;
+
+  $("#rib").appendChild(ribbon(d));
+  $("#rib").scrollLeft = $("#rib").scrollWidth * 0.18;   // start at the evening before
+  $("#mon").appendChild(month(ov, day));
+  $("#mon").scrollLeft = $("#mon").scrollWidth;          // most recent days first
+  $("#prev").onclick = () => load(addDays(day, -1));
+  $("#next").onclick = () => load(addDays(day, 1));
+  if ($("#tod")) $("#tod").onclick = () => load(st.today);
+  history.replaceState(null, "", isToday ? "/" : `/?d=${day}`);
+}
+
+document.addEventListener("keydown", e => {
+  if (e.target.closest("input, textarea") || !state.day) return;
+  if (e.key === "ArrowLeft") load(addDays(state.day, -1));
+  if (e.key === "ArrowRight" && state.day !== state.status.today) load(addDays(state.day, 1));
+});
+
+load(new URLSearchParams(location.search).get("d")).then(poll).catch(e => {
+  $("#app").innerHTML = `<p class="empty">Couldn't load the log: ${esc(e.message)}. Is <code>mibro serve</code> still running?</p>`;
+});
+</script>
+</body>
+</html>

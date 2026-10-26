@@ -20,6 +20,8 @@ and it starts talking immediately. A working Python client is in this repository
 
 Session transcripts and what they prove: **[TESTING.md](TESTING.md)**
 
+Turning it into a background logger with a local dashboard: **[APP.md](APP.md)**
+
 ## Quickstart
 
 Linux with BlueZ, Python 3.9+, watch already paired.
@@ -604,7 +606,7 @@ afterthought.
   steps, calories, heart rate) and logs the second as `non-AB packet`. Nothing
   needed is lost, but a proper client should join them before parsing the tail.
 - **No persistence.** Output goes to a log file, not a database. That is the next
-  phase's job.
+  phase's job — done in the `mibro` app, see [APP.md](APP.md).
 - **Heart rate is hourly.** The watch stores one reading per hour, with `0x00`
   meaning no measurement was taken.
 

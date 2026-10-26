@@ -7,7 +7,8 @@ lines; timestamps are as logged.
 Two layers of testing:
 
 - **Offline** — `tests/test_protocol.py`, 15 unit tests over the pure functions,
-  needs no watch.
+  plus `tests/test_app.py`, 26 tests over reassembly, storage, a full sync against a
+  replaying fake watch, and the dashboard API. Needs no watch.
 - **On-device** — the sessions below, run against a paired Mibro Air on Arch Linux.
 
 ---

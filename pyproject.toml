@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mibro"
+version = "0.1.0"
+description = "Log a Mibro Air smartwatch to local SQLite over Bluetooth LE — no vendor app, no account, no network"
+readme = "APP.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = ["bleak>=0.22"]
+
+[project.scripts]
+mibro = "mibro.cli:main"
+
+[tool.setuptools]
+packages = ["mibro"]
+
+[tool.setuptools.package-data]
+mibro = ["static/*.html"]
