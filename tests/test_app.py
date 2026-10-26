@@ -195,6 +195,34 @@ class TestStore(unittest.TestCase):
         self.assertEqual(self.st.device()["ota_version"], "2.10")
 
 
+class TestFingerprint(unittest.TestCase):
+    """The dashboard redraws when this changes — including when the change is
+    made by a different process (the timer), i.e. a different connection."""
+
+    def test_changes_when_another_connection_adds_data(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "f.db"
+            watcher, writer = Store(path), Store(path)
+            before = watcher.fingerprint()
+            self.assertEqual(before, watcher.fingerprint())      # stable at rest
+            sid = writer.begin_sync("ble", "2026-09-17 16:00:00")
+            for p in ACT_0200:
+                writer.add_packet(sid, "rx", p, "2026-09-17 16:00:00")
+            writer.finish_sync(sid)
+            writer.ingest(sid)
+            after = watcher.fingerprint()
+            self.assertNotEqual(before, after)
+            # a second sync that rewrites the same hour is also a change
+            sid2 = writer.begin_sync("ble", "2026-09-17 17:00:00")
+            for p in ACT_0200:
+                writer.add_packet(sid2, "rx", p, "2026-09-17 17:00:00")
+            writer.finish_sync(sid2)
+            writer.ingest(sid2)
+            self.assertNotEqual(after, watcher.fingerprint())
+            watcher.close()
+            writer.close()
+
+
 class FakeWatch:
     """Replays captured traffic: greeting on subscribe, records on request."""
 
@@ -349,6 +377,15 @@ class TestWeb(unittest.TestCase):
         d = json.loads(body)
         self.assertEqual(d["night"]["asleep_min"], 247)
         self.assertEqual(d["hours"][0]["hr"], 74)
+
+    def test_version_endpoint(self):
+        s, body = self.req("GET", "/api/version")
+        d = json.loads(body)
+        self.assertEqual(s, 200)
+        self.assertIn("|", d["v"])
+        self.assertEqual(d["today"], dt.date.today().isoformat())
+        s, _ = self.req("GET", "/api/version", host="evil.example:80")
+        self.assertEqual(s, 403)                 # same Host check as the rest
 
     def test_foreign_host_is_refused(self):
         s, _ = self.req("GET", "/api/status", host="evil.example:80")

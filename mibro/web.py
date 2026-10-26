@@ -85,6 +85,10 @@ def make_handler(cfg, store: Store, port: int):
                 if u.path == "/":
                     return self._send(200, page, "text/html; charset=utf-8")
                 with db_lock:
+                    if u.path == "/api/version":
+                        # polled every few seconds by the page; see index.html
+                        return self._json({"v": store.fingerprint(),
+                                           "today": today.isoformat()})
                     if u.path == "/api/day":
                         day = q.get("date") or today.isoformat()
                         d = dt.date.fromisoformat(day)

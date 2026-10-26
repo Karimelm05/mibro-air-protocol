@@ -119,6 +119,13 @@ malicious page can't reach it through DNS rebinding) and the one action that cha
 anything, **Sync now**, needs a custom header that a cross-site request can't send.
 The page loads nothing from the network.
 
+**Live refresh.** The page asks `/api/version` every 4 seconds. That returns a
+fingerprint of the database (latest sync, row counts, latest battery reading), which
+changes whenever *any* process adds data — the hourly timer, or `mibro sync` in a
+terminal. When it changes the page redraws in place, keeping its scroll position.
+Nothing is polled while the window is hidden, and if midnight passes while you are
+looking at "today" the view moves on to the new day.
+
 It shows a 30-hour ribbon for the selected day — the evening before through midnight —
 with steps and heart rate above the axis and sleep stages below, then the last 30
 days, the night's segments, and sync history. Click any day in the 30-day strip, or

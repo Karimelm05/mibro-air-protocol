@@ -227,6 +227,21 @@ class Store:
         return total
 
     # ------------------------------------------------------------ queries --
+    def fingerprint(self) -> str:
+        """A short string that changes whenever new data lands, from any
+        process. The dashboard polls it to know when to redraw; it is much
+        cheaper than re-sending every chart. Seven small aggregates; even a
+        year of hourly rows (~9k) is well under a millisecond."""
+        row = self.db.execute("""
+            SELECT (SELECT COALESCE(MAX(id), 0)        FROM syncs),
+                   (SELECT COALESCE(MAX(finished), '') FROM syncs),
+                   (SELECT COALESCE(MAX(sync_id), 0)   FROM activity_hourly),
+                   (SELECT COUNT(*)                    FROM activity_hourly),
+                   (SELECT COALESCE(MAX(sync_id), 0)   FROM sleep_segments),
+                   (SELECT COUNT(*)                    FROM sleep_segments),
+                   (SELECT COALESCE(MAX(ts), '')       FROM battery)""").fetchone()
+        return "|".join(str(v) for v in row)
+
     def last_activity_hour(self) -> Optional[dt.datetime]:
         r = self.db.execute("SELECT MAX(hour) FROM activity_hourly").fetchone()[0]
         return dt.datetime.fromisoformat(r) if r else None

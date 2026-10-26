@@ -366,9 +366,46 @@ document.addEventListener("keydown", e => {
   if (e.key === "ArrowRight" && state.day !== state.status.today) load(addDays(state.day, 1));
 });
 
-load(new URLSearchParams(location.search).get("d")).then(poll).catch(e => {
-  $("#app").innerHTML = `<p class="empty">Couldn't load the log: ${esc(e.message)}. Is <code>mibro serve</code> still running?</p>`;
-});
+/* ---------------------------------------------------------- live refresh */
+// Data can arrive from another process at any time: the hourly timer, or
+// `mibro sync` typed in a terminal. So the page asks the server every few
+// seconds for a fingerprint of the database and redraws only when it changed.
+// Polling a loopback endpoint is cheap, and simpler than keeping a
+// server-sent-events stream open. Skipped while the window is hidden.
+let version = null, refreshing = false;
+
+async function watch() {
+  if (document.hidden || refreshing) return;
+  refreshing = true;
+  try {
+    const v = await api("/api/version");
+    const first = version === null;
+    const changed = !first && (v.v !== version || v.today !== state.status.today);
+    version = v.v;
+    if (changed) {
+      const keepY = window.scrollY;
+      // midnight passed while looking at "today": follow it to the new day
+      const followToday = state.day === state.status.today;
+      state.status = null;                       // force a fresh /api/status
+      await load(followToday ? null : state.day);
+      window.scrollTo(0, keepY);
+    }
+  } catch (_) { /* server restarting or busy: try again next tick */ }
+  refreshing = false;
+}
+
+document.addEventListener("visibilitychange", () => { if (!document.hidden) watch(); });
+
+// Read the fingerprint *before* the first draw, so data that lands in between
+// is not missed.
+api("/api/version")
+  .then(v => { version = v.v; })
+  .then(() => load(new URLSearchParams(location.search).get("d")))
+  .then(poll)
+  .then(() => setInterval(watch, 4000))
+  .catch(e => {
+    $("#app").innerHTML = `<p class="empty">Couldn't load the log: ${esc(e.message)}. Is <code>mibro serve</code> still running?</p>`;
+  });
 </script>
 </body>
 </html>
